@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tallyhome — the Reyes household budget</title>
+<meta name="description" content="Tallyhome keeps one household's budget on one page: what came in, what went out, what is planned, and what is still safe to spend.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="header-inner">
+    <a class="brand" href="#/">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M4 17 L16 5 L28 17 V28 H21 V20 H11 V28 H4 Z" fill="#276749"/><path d="M13 24.5 h6 M13 21.5 h6" stroke="#faf6ef" stroke-width="1.8" stroke-linecap="round"/></svg>
+      <span class="brand-name">Tallyhome</span>
+    </a>
+    <nav class="site-nav" aria-label="Budget sections">
+      <a href="#/" data-route="overview">Overview</a>
+      <a href="#/budget" data-route="budget">Budget</a>
+      <a href="#/activity" data-route="activity">Activity</a>
+      <a href="#/bills" data-route="bills">Bills</a>
+      <a href="#/goals" data-route="goals">Goals</a>
+      <a href="#/guide" data-route="guide">Guide</a>
+    </nav>
+  </div>
+  <p class="header-sub">The Reyes household · November 2026 · every figure on this page comes from the same ledger</p>
+</header>
+
+<main id="view" class="view"></main>
+
+<footer class="site-footer">
+  <p><strong>Tallyhome</strong> is the Reyes family's own budget page: Maya, Daniel and June, one flat, one car, one plan.</p>
+  <p>Figures are November 2026's, kept by hand and checked every Sunday. Amounts in US dollars.</p>
+</footer>
+
+<script type="module" src="/main.js"></script>
+</body>
+</html>
