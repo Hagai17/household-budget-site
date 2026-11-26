@@ -1,65 +1,102 @@
-// Charts for Tallyhome, drawn as inline SVG strings. No library: a donut is
-// a few circle strokes and a bar chart is a few rects, and keeping them here
-// keeps the first load small and every figure tied to the data file.
+// Tallyhome charts — small hand-drawn SVG charts, no libraries.
+// The donut shows where the month's spending went; the bars show each envelope
+// against its budget. Both are pure functions of the data: no hard-coded figures.
 
-import { money } from './money.js';
+const TallyCharts = {
+  // Donut of spending by category. Centre shows the total spent.
+  // Returns an SVG string; slices under 1.5% of the total are folded into "Rest".
+  donut(data, spent) {
+    const size = 220;
+    const centre = size / 2;
+    const radius = 88;
+    const inner = 58;
+    const total = Object.values(spent).reduce((a, b) => a + b, 0);
+    if (!total) return '<p class="empty">No spending yet this month.</p>';
 
-const DONUT_COLORS = ['#276749', '#c77400', '#7c5cbf', '#2b6cb0', '#b3402a', '#5a7d2a', '#8a6d3b', '#4a5568'];
+    const slices = data.categories
+      .map((cat) => ({ cat, amount: spent[cat.id] || 0 }))
+      .filter((s) => s.amount > 0)
+      .sort((a, b) => b.amount - a.amount);
 
-// Donut of parts: [{ label, value }]. Returns SVG with a centre total and
-// leaves the legend to the caller, who knows the page's layout.
-export function donutChart(parts, size = 190) {
-  const total = parts.reduce((t, p) => t + p.value, 0);
-  const radius = 70;
-  const circumference = 2 * Math.PI * radius;
-  let offset = 0;
-  const rings = parts
-    .map((part, i) => {
-      const frac = total ? part.value / total : 0;
-      const dash = frac * circumference;
-      const el = `<circle cx="100" cy="100" r="${radius}" fill="none" stroke="${DONUT_COLORS[i % DONUT_COLORS.length]}" stroke-width="26" stroke-dasharray="${dash.toFixed(2)} ${(circumference - dash).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 100 100)"><title>${part.label}: ${money(part.value)}</title></circle>`;
-      offset += dash;
-      return el;
-    })
-    .join('');
-  return `<svg viewBox="0 0 200 200" width="${size}" height="${size}" role="img" aria-label="Spending by category, total ${money(total)}">${rings}<text x="100" y="95" text-anchor="middle" class="donut-total">${money(total)}</text><text x="100" y="116" text-anchor="middle" class="donut-caption">spent so far</text></svg>`;
-}
+    const main = [];
+    let rest = 0;
+    for (const s of slices) {
+      if (s.amount / total >= 0.015) main.push(s);
+      else rest += s.amount;
+    }
+    if (rest > 0) main.push({ cat: { id: 'rest', name: 'Rest', colour: '#c9c2b4' }, amount: rest });
 
-export function donutLegend(parts) {
-  const total = parts.reduce((t, p) => t + p.value, 0);
-  return parts
-    .map((part, i) => {
-      const share = total ? Math.round((part.value / total) * 100) : 0;
-      return `<li><span class="swatch" style="background:${DONUT_COLORS[i % DONUT_COLORS.length]}"></span>${part.label}<span class="legend-value">${money(part.value)} · ${share}%</span></li>`;
-    })
-    .join('');
-}
+    let angle = -Math.PI / 2;
+    let paths = '';
+    for (const s of main) {
+      const frac = s.amount / total;
+      const sweep = frac * Math.PI * 2;
+      const a0 = angle;
+      const a1 = angle + sweep;
+      const large = sweep > Math.PI ? 1 : 0;
+      const x0 = centre + radius * Math.cos(a0);
+      const y0 = centre + radius * Math.sin(a0);
+      const x1 = centre + radius * Math.cos(a1);
+      const y1 = centre + radius * Math.sin(a1);
+      const ix1 = centre + inner * Math.cos(a1);
+      const iy1 = centre + inner * Math.sin(a1);
+      const ix0 = centre + inner * Math.cos(a0);
+      const iy0 = centre + inner * Math.sin(a0);
+      paths += '<path d="M ' + x0.toFixed(1) + ' ' + y0.toFixed(1) +
+        ' A ' + radius + ' ' + radius + ' 0 ' + large + ' 1 ' + x1.toFixed(1) + ' ' + y1.toFixed(1) +
+        ' L ' + ix1.toFixed(1) + ' ' + iy1.toFixed(1) +
+        ' A ' + inner + ' ' + inner + ' 0 ' + large + ' 0 ' + ix0.toFixed(1) + ' ' + iy0.toFixed(1) +
+        ' Z" fill="' + s.cat.colour + '"><title>' + s.cat.name + ' ' +
+        TallyMoney.format(s.amount) + '</title></path>';
+      angle = a1;
+    }
 
-// Grouped bars: rows of { month, income, out }. Two bars a month, income in
-// green and money out in amber, scaled to the largest value in the set.
-export function cashFlowBars(rows, width = 520, height = 190) {
-  const max = Math.max(...rows.map((r) => Math.max(r.income, r.out))) * 1.08;
-  const base = height - 26;
-  const usable = base - 14;
-  const groupW = width / rows.length;
-  const barW = Math.min(26, groupW / 3.4);
-  const bars = rows
-    .map((row, i) => {
-      const x0 = i * groupW + groupW / 2;
-      const ih = (row.income / max) * usable;
-      const oh = (row.out / max) * usable;
-      return `<rect x="${(x0 - barW - 3).toFixed(1)}" y="${(base - ih).toFixed(1)}" width="${barW}" height="${ih.toFixed(1)}" rx="3" fill="#276749"><title>${row.month} income ${money(row.income)}</title></rect>` +
-        `<rect x="${(x0 + 3).toFixed(1)}" y="${(base - oh).toFixed(1)}" width="${barW}" height="${oh.toFixed(1)}" rx="3" fill="#c77400"><title>${row.month} out ${money(row.out)}</title></rect>` +
-        `<text x="${x0}" y="${height - 6}" text-anchor="middle" class="bar-label">${row.month}</text>`;
-    })
-    .join('');
-  return `<svg viewBox="0 0 ${width} ${height}" class="bars" role="img" aria-label="Income versus money out, last six months"><line x1="0" y1="${base}" x2="${width}" y2="${base}" class="axis"/>${bars}</svg>`;
-}
+    const legend = main
+      .map((s) => '<li><span class="dot" style="background:' + s.cat.colour + '"></span>' +
+        '<span class="lg-name">' + s.cat.name + '</span>' +
+        '<span class="lg-value">' + TallyMoney.format(s.amount) + '</span></li>')
+      .join('');
 
-// A single progress bar with an over-100% state, used by the budget table
-// and the goals page. `ratio` is 0..1+; the fill turns red past 1.
-export function progressBar(ratio, label) {
-  const widthPct = Math.min(100, Math.max(0, ratio * 100));
-  const over = ratio > 1 ? ' over' : '';
-  return `<div class="progress${over}" role="img" aria-label="${label}"><span style="width:${widthPct.toFixed(1)}%"></span></div>`;
-}
+    return '<div class="donut-wrap">' +
+      '<svg viewBox="0 0 ' + size + ' ' + size + '" role="img" aria-label="Spending by category">' +
+      paths +
+      '<text x="' + centre + '" y="' + (centre - 4) + '" text-anchor="middle" class="donut-total">' +
+      TallyMoney.format(total) + '</text>' +
+      '<text x="' + centre + '" y="' + (centre + 18) + '" text-anchor="middle" class="donut-label">spent so far</text>' +
+      '</svg><ul class="legend">' + legend + '</ul></div>';
+  },
+
+  // One horizontal bar per envelope: filled to spent/budget, amber past 85%,
+  // red once over budget. Returns HTML, not SVG — the bar is a div.
+  budgetBar(cat, spent) {
+    const pct = cat.budget ? Math.min(100, Math.round((spent / cat.budget) * 100)) : 0;
+    const over = spent > cat.budget;
+    const left = cat.budget - spent;
+    // Amber only while an envelope is close to its limit (85-99%): exactly
+    // 100% means it was paid in full on purpose (mortgage, savings moves),
+    // so it keeps its own colour instead of looking like a warning.
+    const cls = over ? 'bar over' : pct >= 85 && pct < 100 ? 'bar warm' : 'bar';
+    const status = over
+      ? TallyMoney.format(-left) + ' over'
+      : TallyMoney.format(left) + ' left';
+    return '<div class="envelope">' +
+      '<div class="env-head"><span class="env-name">' + cat.name + '</span>' +
+      '<span class="env-nums"><strong>' + TallyMoney.format(spent) + '</strong> of ' +
+      TallyMoney.format(cat.budget) + '</span></div>' +
+      '<div class="' + cls + '" role="progressbar" aria-valuenow="' + pct +
+      '" aria-valuemin="0" aria-valuemax="100" aria-label="' + cat.name + ' ' + pct + ' percent spent">' +
+      '<span style="width:' + pct + '%;background:' + cat.colour + '"></span></div>' +
+      '<div class="env-foot"><span>' + pct + '% used</span><span class="' +
+      (over ? 'over-text' : '') + '">' + status + '</span></div></div>';
+  },
+
+  // Thin progress bar for a savings goal.
+  goalBar(goal) {
+    const pct = Math.min(100, Math.round((goal.saved / goal.target) * 100));
+    return '<div class="goal"><div class="env-head"><span class="env-name">' + goal.name + '</span>' +
+      '<span class="env-nums"><strong>' + TallyMoney.format(goal.saved) + '</strong> of ' +
+      TallyMoney.format(goal.target) + '</span></div>' +
+      '<div class="bar"><span style="width:' + pct + '%;background:#2e6f8e"></span></div>' +
+      '<div class="env-foot"><span>' + pct + '% there</span><span>' + goal.note + '</span></div></div>';
+  },
+};

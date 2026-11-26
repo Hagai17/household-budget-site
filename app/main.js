@@ -1,78 +1,157 @@
-// Tallyhome entry point: holds the ledger, routes the hash to a view, and
-// wires the controls (the budget calculator, the activity filter and the
-// add-transaction form) after each render.
+// Tallyhome main — routing and state.
+// The site is three hash pages (#/, #/budget, #/activity). State is the month's
+// ledger from data.js plus the household's own changes, kept in localStorage:
+// budget tweaks, added expenses and removed ones. Nothing leaves the device.
 
-import { TRANSACTIONS } from './data.js';
-import { activityView, billsView, budgetView, goalsView, guideView, overviewView, splitTable } from './views.js';
+(function () {
+  var STORAGE_KEY = 'tallyhome-v1';
+  var app = document.getElementById('app');
 
-// The ledger starts as the household's real November and can grow while the
-// page is open: adding a transaction re-renders the current page, and every
-// other page reads the same list, so all totals stay in step.
-const state = {
-  transactions: TRANSACTIONS.map((t) => ({ ...t })),
-  filter: 'all',
-};
+  function loadState() {
+    var state = {
+      household: TallyData.household,
+      place: TallyData.place,
+      month: TallyData.month,
+      monthLabel: TallyData.monthLabel,
+      daysInMonth: TallyData.daysInMonth,
+      dayToday: TallyData.dayToday,
+      income: TallyData.income,
+      categories: TallyData.categories.map(function (c) { return Object.assign({}, c); }),
+      transactions: TallyData.transactions.map(function (t, i) {
+        return Object.assign({ id: 't' + i }, t);
+      }),
+      bills: TallyData.bills,
+      goals: TallyData.goals,
+    };
+    try {
+      var saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null');
+      if (saved) {
+        if (saved.budgets) {
+          state.categories.forEach(function (c) {
+            if (typeof saved.budgets[c.id] === 'number') c.budget = saved.budgets[c.id];
+          });
+        }
+        if (Array.isArray(saved.added)) state.transactions = state.transactions.concat(saved.added);
+        if (Array.isArray(saved.removed)) {
+          state.transactions = state.transactions.filter(function (t) {
+            return saved.removed.indexOf(t.id) === -1;
+          });
+        }
+      }
+    } catch (e) { /* a broken saved state just means: start from the ledger */ }
+    return state;
+  }
 
-const view = document.getElementById('view');
+  function saveState(state, added, removed) {
+    var budgets = {};
+    state.categories.forEach(function (c) { budgets[c.id] = c.budget; });
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify({
+        budgets: budgets,
+        added: added,
+        removed: removed,
+      }));
+    } catch (e) { /* private mode: the site still works for this visit */ }
+  }
 
-const ROUTES = {
-  '': 'overview',
-  '/': 'overview',
-  '/budget': 'budget',
-  '/activity': 'activity',
-  '/bills': 'bills',
-  '/goals': 'goals',
-  '/guide': 'guide',
-};
+  var state = loadState();
+  var added = state.transactions.filter(function (t) { return String(t.id).indexOf('u') === 0; });
+  var removed = [];
+  try {
+    var saved = JSON.parse(window.localStorage.getItem(STORAGE_KEY) || 'null');
+    if (saved && Array.isArray(saved.removed)) removed = saved.removed;
+  } catch (e) {}
 
-function currentRoute() {
-  const hash = window.location.hash.replace(/^#/, '');
-  return ROUTES[hash] ?? 'overview';
-}
+  var filter = 'all';
+  var query = '';
 
-function render() {
-  const route = currentRoute();
-  const tx = state.transactions;
-  if (route === 'overview') view.innerHTML = overviewView(tx);
-  else if (route === 'budget') { view.innerHTML = budgetView(tx); wireBudget(tx); }
-  else if (route === 'activity') { view.innerHTML = activityView(tx, state.filter); wireActivity(); }
-  else if (route === 'bills') view.innerHTML = billsView();
-  else if (route === 'goals') view.innerHTML = goalsView();
-  else view.innerHTML = guideView(tx);
+  function currentRoute() {
+    var hash = window.location.hash || '#/';
+    if (hash.indexOf('#/budget') === 0) return 'budget';
+    if (hash.indexOf('#/activity') === 0) return 'activity';
+    return 'overview';
+  }
 
-  document.querySelectorAll('.site-nav a').forEach((a) => {
-    a.classList.toggle('active', a.dataset.route === route);
+  function render() {
+    var route = currentRoute();
+    document.querySelectorAll('.nav a').forEach(function (a) {
+      a.classList.toggle('on', a.getAttribute('href') === '#/' + (route === 'overview' ? '' : route));
+    });
+    if (route === 'budget') app.innerHTML = TallyViews.budget(TallyData, state);
+    else if (route === 'activity') app.innerHTML = TallyViews.activity(TallyData, state, filter, query);
+    else app.innerHTML = TallyViews.overview(TallyData, state);
+    window.scrollTo(0, 0);
+  }
+
+  // One delegated listener covers the whole page: budget tweaks, filters,
+  // removals and the search box all live inside #app.
+  app.addEventListener('click', function (event) {
+    var adjust = event.target.closest('[data-adjust]');
+    if (adjust) {
+      var parts = adjust.getAttribute('data-adjust').split(':');
+      var cat = state.categories.find(function (c) { return c.id === parts[0]; });
+      if (cat) {
+        cat.budget = Math.max(0, cat.budget + Number(parts[1]));
+        saveState(state, added, removed);
+        render();
+      }
+      return;
+    }
+    var chip = event.target.closest('[data-filter]');
+    if (chip) {
+      filter = chip.getAttribute('data-filter');
+      render();
+      return;
+    }
+    var remove = event.target.closest('[data-remove]');
+    if (remove) {
+      var id = remove.getAttribute('data-remove');
+      state.transactions = state.transactions.filter(function (t) { return t.id !== id; });
+      added = added.filter(function (t) { return t.id !== id; });
+      removed.push(id);
+      saveState(state, added, removed);
+      render();
+    }
   });
-  window.scrollTo(0, 0);
-}
 
-// The 50/30/20 calculator: re-render its table on every keystroke.
-function wireBudget(tx) {
-  const input = document.getElementById('pay-input');
-  const output = document.getElementById('split-output');
-  const draw = () => { output.innerHTML = splitTable(Number(input.value) || 0, tx); };
-  input.addEventListener('input', draw);
-  draw();
-}
-
-// The activity page's filter and add form.
-function wireActivity() {
-  document.getElementById('filter-select').addEventListener('change', (event) => {
-    state.filter = event.target.value;
-    render();
+  app.addEventListener('input', function (event) {
+    if (event.target.id === 'tx-search') {
+      query = event.target.value;
+      var list = app.querySelector('.txs');
+      if (list) {
+        // Re-render only the list so the search box keeps focus and its text.
+        var html = TallyViews.activity(TallyData, state, filter, query);
+        var tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        var fresh = tmp.querySelector('.txs');
+        if (fresh) list.innerHTML = fresh.innerHTML;
+        var count = tmp.querySelector('.hero-sub');
+        var shown = app.querySelector('.hero-sub');
+        if (count && shown) shown.textContent = count.textContent;
+      }
+    }
   });
-  document.getElementById('add-form').addEventListener('submit', (event) => {
+
+  app.addEventListener('submit', function (event) {
+    if (event.target.id !== 'add-tx') return;
     event.preventDefault();
-    const day = Number(document.getElementById('f-day').value);
-    const payee = document.getElementById('f-payee').value.trim();
-    const category = document.getElementById('f-category').value;
-    const amount = Number(document.getElementById('f-amount').value);
-    if (!payee || !(day >= 1 && day <= 30) || !(amount > 0)) return;
-    state.transactions.push({ day, payee, category, amount });
-    state.filter = 'all';
+    var form = event.target;
+    var amount = Math.round(Number(form.amount.value) * 100);
+    if (!amount || amount <= 0) return;
+    var tx = {
+      id: 'u' + Date.now(),
+      date: form.date.value || '2026-11-26',
+      category: form.category.value,
+      merchant: form.merchant.value.trim(),
+      note: 'Added by the household',
+      amount: amount,
+    };
+    state.transactions.push(tx);
+    added.push(tx);
+    saveState(state, added, removed);
     render();
   });
-}
 
-window.addEventListener('hashchange', render);
-render();
+  window.addEventListener('hashchange', render);
+  render();
+})();

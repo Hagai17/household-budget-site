@@ -1,54 +1,110 @@
-// Money and calendar helpers for Tallyhome. Everything here is pure: a value
-// goes in, a formatted string or a sum comes out, nothing is stored.
+// Tallyhome money — formatting and the month's arithmetic, all in cents.
+// Nothing here touches the page; views.js does the rendering.
 
-export function money(amount) {
-  const sign = amount < 0 ? '-' : '';
-  const abs = Math.abs(amount);
-  const whole = Math.floor(abs);
-  const cents = Math.round((abs - whole) * 100);
-  const grouped = String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return cents === 0 ? `${sign}$${grouped}` : `${sign}$${grouped}.${String(cents).padStart(2, '0')}`;
-}
+const TallyMoney = {
+  // $1,234.56 — cents in, a readable dollar string out.
+  format(cents) {
+    const sign = cents < 0 ? '-' : '';
+    const whole = Math.floor(Math.abs(cents) / 100);
+    const frac = Math.abs(cents) % 100;
+    return sign + '$' + whole.toLocaleString('en-US') + '.' + String(frac).padStart(2, '0');
+  },
 
-export function moneyExact(amount) {
-  const sign = amount < 0 ? '-' : '';
-  const abs = Math.abs(amount);
-  const whole = Math.floor(abs);
-  const cents = Math.round((abs - whole) * 100);
-  const grouped = String(whole).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  return `${sign}$${grouped}.${String(cents).padStart(2, '0')}`;
-}
+  // Short form for chart labels: $1.2k, $850, $64.
+  short(cents) {
+    const dollars = Math.abs(cents) / 100;
+    const sign = cents < 0 ? '-' : '';
+    if (dollars >= 1000) return sign + '$' + (dollars / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
+    if (dollars >= 100) return sign + '$' + Math.round(dollars);
+    return sign + '$' + dollars.toFixed(0);
+  },
 
-export function sum(rows, pick) {
-  return rows.reduce((total, row) => total + pick(row), 0);
-}
+  percent(part, whole) {
+    if (!whole) return 0;
+    return Math.round((part / whole) * 100);
+  },
 
-// A percentage that is safe to show: 0 when there is nothing to divide by.
-export function pct(part, whole) {
-  if (!whole) return 0;
-  return Math.round((part / whole) * 1000) / 10;
-}
+  // Total take-home for the month.
+  incomeTotal(data) {
+    return data.income.reduce((sum, row) => sum + row.amount, 0);
+  },
 
-// "Nov 3" for a day-of-month in the budget month.
-const MONTH_SHORT = 'Nov';
-export function dayLabel(day) {
-  return `${MONTH_SHORT} ${day}`;
-}
+  // Spent per category, summed from the transaction ledger.
+  spentByCategory(data) {
+    const spent = {};
+    for (const cat of data.categories) spent[cat.id] = 0;
+    for (const tx of data.transactions) {
+      if (spent[tx.category] === undefined) spent[tx.category] = 0;
+      spent[tx.category] += tx.amount;
+    }
+    return spent;
+  },
 
-// Months needed to reach a target at a fixed monthly amount, rounded up:
-// a goal is only finished when the last payment lands.
-export function monthsToGoal(saved, target, monthly) {
-  if (saved >= target) return 0;
-  if (monthly <= 0) return Infinity;
-  return Math.ceil((target - saved) / monthly);
-}
+  totalSpent(data) {
+    return data.transactions.reduce((sum, tx) => sum + tx.amount, 0);
+  },
 
-const MONTH_NAMES = ['Dec', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov'];
+  totalBudget(data) {
+    return data.categories.reduce((sum, cat) => sum + cat.budget, 0);
+  },
 
-// The month label `months` after November 2026, e.g. 4 -> "March 2027".
-export function monthAfter(months) {
-  const index = 10 + months; // November 2026 is index 10 of its year
-  const name = MONTH_NAMES[index % 12];
-  const year = 2026 + Math.floor(index / 12);
-  return `${name} ${year}`;
-}
+  daysLeft(data) {
+    return Math.max(0, data.daysInMonth - data.dayToday);
+  },
+
+  // Money not yet spent and not already assigned to savings or the buffer.
+  flexibleLeft(data, spent) {
+    let left = 0;
+    for (const cat of data.categories) {
+      if (cat.group === 'savings' || cat.group === 'buffer') continue;
+      left += Math.max(0, cat.budget - (spent[cat.id] || 0));
+    }
+    return left;
+  },
+
+  // 50/30/20 split, in whole percent of income, from the budgets.
+  ruleSplit(data) {
+    const income = this.incomeTotal(data);
+    const group = { needs: 0, wants: 0, savings: 0, buffer: 0 };
+    for (const cat of data.categories) group[cat.group] += cat.budget;
+    return {
+      needs: this.percent(group.needs, income),
+      wants: this.percent(group.wants, income),
+      savings: this.percent(group.savings, income),
+      buffer: this.percent(group.buffer, income),
+    };
+  },
+
+  // Envelopes that have gone over their budget, with the overrun.
+  overBudget(data, spent) {
+    return data.categories
+      .filter((cat) => (spent[cat.id] || 0) > cat.budget)
+      .map((cat) => ({ category: cat, over: (spent[cat.id] || 0) - cat.budget }));
+  },
+
+  // Biggest single purchase outside the fixed bills (mortgage, savings moves).
+  biggestEveryday(data) {
+    const fixed = new Set(['housing', 'savings']);
+    let best = null;
+    for (const tx of data.transactions) {
+      if (fixed.has(tx.category)) continue;
+      if (!best || tx.amount > best.amount) best = tx;
+    }
+    return best;
+  },
+
+  // Short day label for a transaction date: "Mon 2" style.
+  dayLabel(isoDate) {
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = new Date(isoDate + 'T12:00:00');
+    return days[d.getDay()] + ' ' + months[d.getMonth()] + ' ' + d.getDate();
+  },
+
+  // "Dec 1" for a bill's due date.
+  dueLabel(isoDate) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const d = new Date(isoDate + 'T12:00:00');
+    return months[d.getMonth()] + ' ' + d.getDate();
+  },
+};
