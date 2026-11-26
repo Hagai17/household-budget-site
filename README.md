@@ -1,50 +1,57 @@
-# Tallyhome — a household budget site
+# Tallyhome — the Alder family's household budget
 
-[![Bounty](https://make.fun/badge/best-household-budget-site-20261126-1457.svg)](https://make.fun/c/best-household-budget-site-20261126-1457?utm_source=github&utm_medium=readme&utm_campaign=household-budget-site)
-[![Rank](https://make.fun/badge/best-household-budget-site-20261126-1457/Hagai17/household-budget-site/rank.svg)](https://make.fun/c/best-household-budget-site-20261126-1457?utm_source=github&utm_medium=readme&utm_campaign=household-budget-site)
-[![Reward](https://make.fun/badge/best-household-budget-site-20261126-1457/Hagai17/household-budget-site/reward.svg)](https://make.fun/c/best-household-budget-site-20261126-1457?utm_source=github&utm_medium=readme&utm_campaign=household-budget-site)
+[![Make the best household budget site](https://make.fun/badge/best-household-budget-site-20261126-1457.svg)](https://make.fun/c/best-household-budget-site-20261126-1457?utm_source=github&utm_medium=readme&utm_campaign=makefun)
+[![Rank](https://make.fun/badge/best-household-budget-site-20261126-1457/Hagai17/household-budget-site/rank.svg)](https://make.fun/c/best-household-budget-site-20261126-1457?utm_source=github&utm_medium=readme&utm_campaign=makefun)
+[![Reward](https://make.fun/badge/best-household-budget-site-20261126-1457/Hagai17/household-budget-site/reward.svg)](https://make.fun/c/best-household-budget-site-20261126-1457?utm_source=github&utm_medium=readme&utm_campaign=makefun)
 
-Tallyhome keeps one household's budget on one page: the Reyes family —
-Maya, Daniel and June — through November 2026. It is a static site with no
-build step and no network loads; open `app/index.html` through any static
-server and it works, on a desktop or a phone.
+Tallyhome is a household budget site for one family — the Alders of Maplewood —
+for November 2026. Every dollar of their $5,850 take-home has a job, and the site
+shows it: envelopes for each category, the bills coming up, savings goals, and
+every expense listed. It works offline, on a desktop and on a phone, from its
+own static files. No accounts, no ads, no trackers, nothing loaded over the
+network.
 
 ## What it does
 
-- **Overview** — money in ($5,860), money out ($5,198.86), safe to spend after
-  the bills still due ($549.15, about $137 a day), the month's savings rate
-  (22%), a spending donut by category, and income-vs-out bars for six months.
-- **Budget** — all 16 categories in Needs / Wants / Savings groups with
-  planned vs used, progress bars and over-budget flags, plus a live
-  **50 / 30 / 20 calculator**: type any take-home pay and the rule's split is
-  worked out next to this household's own.
-- **Activity** — every November payment in and out, a working category
-  filter, and an add-transaction form. Added transactions update the totals
-  on every page at once, because every figure is summed from one ledger.
-- **Bills** — eight regular bills with due dates and paid/upcoming status,
-  and the subscriptions priced by the year ($707.64 — the yearly truth).
-- **Goals** — emergency fund, Lisbon holiday and car replacement with
-  progress and finish dates computed from the monthly payments, plus the
-  student-loan payoff countdown.
-- **Guide** — the system behind it: give every dollar a job, 50/30/20 as a
-  compass, pay savings first, sinking funds, the emergency-fund ladder, and
-  the 20-minute Sunday money date.
+- **Overview** — income, spent, left and saved at a glance; a donut of where the
+  money went; "safe to spend" per day for the rest of the month; the biggest
+  envelopes, the next bills, and the latest activity.
+- **Budget** — all 13 envelopes with spent-against-budget bars, a 50 / 30 / 20
+  check, and −$10 / +$10 buttons that really move the budget and re-add the
+  totals. Two envelopes are over budget this month (dining out and home &
+  garden) and the site says so plainly, with the buffer covering them.
+- **Activity** — the full ledger, newest first, with category filters, a search
+  box, and a form that adds a real expense: it appears at once, updates every
+  total on the site, and can be removed again. Added entries and budget tweaks
+  are saved on the device (localStorage) and nothing leaves it.
 
-## Layout
+Every figure is computed from the transaction ledger in `app/data.js` — category
+totals are the sum of their transactions — so the numbers on screen can never
+disagree with the books.
+
+## Run it
+
+```sh
+node serve.ts
+# open http://localhost:8080
+```
+
+Hand it in (writes the dossier the judge reads):
+
+```sh
+mkdir -p out && MAKEFUN_OUTPUT_DIR=out node main.ts
+```
+
+## Files
 
 - `main.ts` — the hand-in program: copies `app/` and `screenshots/` to the
-  output directory and writes `dossier.json` with the kit's library.
-- `app/data.js` — the ledger: income, categories, transactions, bills,
-  subscriptions, goals. The single source of truth for every figure.
-- `app/money.js` — currency formatting, sums, percentages, goal dates.
-- `app/charts.js` — the donut, cash-flow bars and progress bars as inline SVG.
-- `app/views.js` — one render function per page.
-- `app/main.js` — hash routing and the controls (calculator, filter, form).
-- `app/style.css` — the paper-ledger look; system font stacks only.
-- `serve.ts` — a tiny local static server: `node serve.ts`, then open
-  http://localhost:8080.
-- `screenshots/` — real renders of the site, listed in `shots.json`.
-
-## License
-
-MIT — see `LICENSE`.
+  output directory and writes `dossier.json` with the vendored library.
+- `serve.ts` — a tiny static server for local use.
+- `app/` — the site itself: `index.html`, `style.css`, and one job per file:
+  `data.js` (the ledger), `money.js` (formatting and arithmetic),
+  `charts.js` (the hand-drawn SVG donut and bars), `views.js` (the three
+  pages), `main.js` (routing and state).
+- `screenshots/` — fresh renders of the site running: overview, budget,
+  activity, and the overview on a phone.
+- `vendor/makefun-frontend.ts` — the make.fun dossier library, unchanged
+  from the kit.
